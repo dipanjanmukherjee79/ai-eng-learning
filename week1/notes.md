@@ -27,3 +27,26 @@
 - It does NOT extract the API's error message from the body — that's still in response.json()
 - Production pattern: read the body and extract the real error message before letting the exception propagate
 - 4xx = client's fault, don't retry. 5xx and 429 = server's fault, retry with backoff
+
+
+
+## Day 2 (06/05/2026)
+
+### What I built
+- Typed APIError exception extracts type and message from response body
+- Retry logic with exponential backoff: retries 429 and 5xx, fails fast on 4xx
+- Token usage and AUD cost printed after each call
+
+### Failure mode tests run
+- Missing CLI arg → clean usage message, exit 1, no API call
+- Whitespace-only input → 400 invalid_request_error with field-level detail, no retry
+- Oversized prompt (1M tokens) → 413 with actual token count and limit
+- Bad API key → 401 authentication_error, no retry
+- Bad model name → 404 not_found_error, no retry
+
+### What surprised me
+- (your specific observation, e.g. "Anthropic's 413 error tells me exactly which token limit I hit, not just 'too big'")
+- (another)
+
+### Key insight
+- Without typed error extraction, every failure looks the same to your logs ("Client error 4XX"). With it, you can grep your logs for `error_type: rate_limit_error` and instantly know what kind of failure pattern you're seeing.
