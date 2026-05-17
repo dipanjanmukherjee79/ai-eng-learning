@@ -50,3 +50,21 @@
 
 ### Key insight
 - Without typed error extraction, every failure looks the same to your logs ("Client error 4XX"). With it, you can grep your logs for `error_type: rate_limit_error` and instantly know what kind of failure pattern you're seeing.
+## Day 4 (17/05/2026)
+
+### Test A — non-recipe input
+- Observed: Claude returns a fully-formed JSON with null values across the board
+- Schema rule was followed correctly — but the result is a silent failure from an application perspective
+- Lesson: the model can only signal what your schema gives it a vocabulary for. Add an explicit "is_recipe" boolean (or "valid_input", "confidence", etc.) so the model can refuse, not just comply emptily
+- Production implication: silent nulls in pipelines = invisible failures. Always design schemas with a "this isn't valid input" signal.
+### Today's assertion patterns
+- `assert <cond>, <msg>` — Python shortcut for "raise AssertionError if cond is false"
+- `key in dict` checks if a key exists (not a value)
+- Assertions can be disabled with python -O, so don't use them for production validation
+- For real schema validation, Pydantic is the standard — assertions are training wheels for now
+
+### Test B — markdown wrapping
+- Without explicit "no markdown" rule: Claude wrapped output in (describe what you saw — ```json fences? plain ``` fences? no wrapping at all?)
+- With the rule restored: (did it stop?)
+- strip_code_fences handled it transparently — but in production you can't assume the model follows even explicit format instructions
+- Lesson: prompt-based schema enforcement is unreliable for *format* as much as for *content*. Tool Use API addresses this structurally.
