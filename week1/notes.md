@@ -68,3 +68,69 @@
 - With the rule restored: (did it stop?)
 - strip_code_fences handled it transparently — but in production you can't assume the model follows even explicit format instructions
 - Lesson: prompt-based schema enforcement is unreliable for *format* as much as for *content*. Tool Use API addresses this structurally.
+### Test C — temperature variance, finer observation
+- Only `casual_narrative` varied across runs at temperature=1.0
+- `clean_structured` and `ambiguous_quantities` stayed essentially identical
+- This is because temperature controls sampling spread, not the underlying probability distribution
+- Sharp/peaked distributions (unambiguous inputs) produce stable output even at temp=1
+- Flat distributions (genuinely ambiguous inputs) produce variable output
+- Insight: variance under temperature is a diagnostic for input ambiguity, not just a randomness setting
+- In production: running an eval set at temperature=1 reveals which inputs your prompt fails to constrain — these are where your prompt needs work
+### Test C — correction to earlier observation
+- Tried "Make some pasta. It's good." at temp=1.0, three runs — identical output
+- This pushed against my initial mental model
+- Refined principle: temperature varies *only across what the model considers plausible*, and the schema rules define what's plausible
+- "Plausible" here was constrained by my "use null when uncertain" rule — the model didn't invent details
+- Real variance requires inputs where multiple legitimate schema-fillings exist (e.g. unspecified quantities in chicken curry, where multiple `quantity` strings would all be "correct")
+- Bigger lesson: well-designed schema rules can suppress variance even at temperature=1.0 — they constrain creativity more than temperature does
+- Use this in production: if you find your extraction is too variable, sharpen the schema rules rather than lowering temperature
+### Test D — partial rule compliance
+- With "translate all string fields to English" rule applied:
+  - title field: "Spaghetti Aglio e Olio" — NOT translated (likely preserved as proper noun)
+  - ingredients, steps, quantities: all correctly translated to English
+- The rule was applied partially — some fields obeyed, title field did not
+- Hypothesis: well-known dish names are treated as proper nouns by training priors, overriding the explicit translation rule
+- Bigger lesson: rules in prompts are heuristics weighted against training priors. Strong priors can override explicit instructions.
+- Compliance is FIELD-BY-FIELD, not all-or-nothing — and the failure pattern isn't always predictable
+- Production-grade fixes: post-processing validation, tool use / function calling for stricter schema enforcement, two-stage extraction, or separate calls per field for critical reliability
+
+### Day 4 — Key insight
+- Prompt-based schema enforcement is best-effort, not contract. Today's 4 tests demonstrated 4 distinct failure modes:
+  - A: non-recipe input → schema-compliant but semantically empty output
+  - B: markdown wrapping → format violations unless explicitly forbidden
+  - C: temperature variance → nondeterminism on inputs with multiple valid fillings
+  - D: multilingual → partial rule compliance when prior conflicts with rule
+- These aren't edge cases — they're predictable behaviours of LLMs operating on natural-language schema rules
+- Structural fix: Anthropic Tool Use API (Day 5) — moves schema from prose-rules to API-contract level
+- Today's cost: AUD $X
+
+
+## Day 5 — Tool Use as structural schema enforcement
+
+### What I built
+- day5_tool_use.py: same recipe extraction, but using Anthropic Tool Use API
+- Schema defined as JSON Schema in the tool's input_schema, not as prose in system prompt
+- tool_choice={"type": "tool", "name": "save_recipe"} forces Claude to call the tool
+- Added is_recipe boolean to give Claude a way to signal "this isn't valid input"
+
+### How Day 5 fixed Day 4's failure modes
+- Test A (non-recipe): is_recipe=false now signals invalid input cleanly — no more silent nulls
+- Test B (markdown wrapping): structurally impossible — tool calls can't be prose-wrapped
+- Test C (temperature): (your observation on whether variance reduced)
+- Test D (translation): (your observation on title translation)
+
+### What didn't change
+- The model's underlying training priors still apply
+- Tool use makes schema enforcement structural, but doesn't eliminate ambiguity in the source text
+- (other observations from your runs)
+
+### Key insight
+- Tool use moves schema enforcement from "polite request in prose" to "API-level contract"
+- The model can still produce semantically wrong content, but it can't produce structurally wrong content
+- Different problem to solve, different solution. Same problem space, different lever.
+- Field-level descriptions in tool schemas are processed differently from system-prompt rules — they appear to have stronger effect on per-field compliance.
+
+### When to use which
+- Tool use: when schema correctness matters more than free-form output (extraction, classification, structured agent actions)
+- Prompt-based JSON: when you need flexibility or the schema is fluid
+- Prose generation: when there's no schema at all (summaries, explanations, creative content)
