@@ -134,3 +134,28 @@
 - Tool use: when schema correctness matters more than free-form output (extraction, classification, structured agent actions)
 - Prompt-based JSON: when you need flexibility or the schema is fluid
 - Prose generation: when there's no schema at all (summaries, explanations, creative content)
+
+### Test C — tool use stabilises variance even at temperature=1
+- At temperature=1.0, chicken curry output was identical (or near-identical) across 3 runs
+- Yesterday at the same temperature, the same input produced visibly different outputs each time
+- Mechanism: tool use makes the model fill structured arguments rather than generate prose JSON.
+  The API enforces shape (fields, types, ordering) below the sampling layer, so temperature
+  only varies the values, not the structure. Fewer decisions = less variance.
+- Production implication: if you need temperature > 0 for other reasons, tool use still gives
+  you reliable structured output.
+
+### Test D — partial priors persist even in tool use
+- Title field description: "Translate the title if the source is in another language"
+- Result: still returned "Spaghetti Aglio e Olio" — Italian preserved
+- Only worked when description was strengthened to: "Translate the title... even if it has no meaning"
+- The phrase "even if it has no meaning" doesn't make the rule clearer — it signals to the model
+  that you specifically want to override its prior about preserving well-known dish names
+- Lesson: tool schemas have hard type/shape constraints but soft semantic ones. Field descriptions
+  are interpreted by the model with training priors still in play. Strong priors require explicit
+  conflict-resolution language to override.
+
+### Day 5 — what tool use actually does
+- Eliminates: markdown wrapping, format failures, schema-shape violations, silent nulls (with is_recipe), most temperature-driven variance
+- Does NOT eliminate: training prior overriding semantic instructions in field descriptions
+- The structural failures vanish; the semantic ones persist with reduced severity
+- Production engineering: layer tool schemas + field descriptions + explicit priors-override language + post-processing validationx
