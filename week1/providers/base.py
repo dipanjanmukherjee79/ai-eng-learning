@@ -73,6 +73,9 @@ def post_with_retries(
     last_exception = None
 
     for attempt in range(max_retries):
+        is_last = attempt == max_retries - 1
+        wait = 2 ** attempt
+
         try:
             response = httpx.post(url, headers=headers, json=body, timeout=timeout)
 
@@ -82,32 +85,29 @@ def post_with_retries(
             if 400 <= response.status_code < 500 and response.status_code != 429:
                 raise extract_api_error(response)
 
-            err = extract_api_error(response)
-            wait = 2 ** attempt
-            print(
-                f"Attempt {attempt + 1}/{max_retries} failed: {err}. "
-                f"Retrying in {wait}s...",
-                file=sys.stderr,
-            )
-            last_exception = err
-            time.sleep(wait)
-            continue
+            last_exception = extract_api_error(response)
+            reason = f"failed: {last_exception}"
 
         except httpx.TimeoutException as e:
-            wait = 2 ** attempt
-            print(
-                f"Attempt {attempt + 1}/{max_retries} timed out. Retrying in {wait}s...",
-                file=sys.stderr,
-            )
             last_exception = APIError(0, "timeout", str(e))
-            time.sleep(wait)
-            continue
+            reason = "timed out"
 
         except httpx.NetworkError as e:
             raise APIError(0, "network_error", str(e))
 
-    raise last_exception or APIError(0, "max_retries_exceeded", f"Failed after {max_retries} attempts")
+        if is_last:
+            print(
+                f"Attempt {attempt + 1}/{max_retries} {reason}. Giving up.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"Attempt {attempt + 1}/{max_retries} {reason}. Retrying in {wait}s...",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
 
+    raise last_exception or APIError(0, "max_retries_exceeded", f"Failed after {max_retries} attempts")
 
 class Provider(Protocol):
     """Interface every provider must implement."""
